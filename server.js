@@ -4,47 +4,10 @@ import path from 'path';
 import fse from 'fs-extra'
 import multiparty from 'multiparty';
 
-const ASSERT_DIR = path.resolve(process.cwd(), 'asserts');
+const ASSERTS_DIR = path.resolve(process.cwd(), 'asserts');
+const SLICE_SIZE = 50 * 1024 * 1024;
 
 const server = http.createServer(handleRequest)
-
-const resolveMerge = req => {
-  return new Promise((resolve) => {
-    let chunks = '';
-    req.on('data', chunkData => {
-      chunks += chunkData;
-    })
-    req.on('end', () => {
-      resolve(JSON.stringify(chunks))
-    })
-  })
-}
-const pipeStream = (path, writeStream) => {
-  return new Promise((resolve) => {
-    const readStream = fse.createReadStream(path);
-    readStream.pipe(writeStream);
-    readStream.on('end', () => {
-      resolve();
-    })
-  })
-}
-
-const mergeFileChunk = async (filePath, size) => {
-  const chunkPaths = await fse.readdir(ASSERT_DIR);
-  chunkPaths.sort((a, b) => a.split('-')[1] - b.split('-')[1])
-  await Promise.all(
-    chunkPaths.map((chunkPath, index) => {
-      const file = fse.readFileSync(path.resolve(ASSERT_DIR, chunkPath));
-      pipeStream(
-        path.resolve(ASSERT_DIR, chunkPath),
-        fse.createWriteStream(filePath, {
-          start: index * file.length,
-          end: (index + 1) * file.length,
-        })
-      );
-    })
-  );
-}
 
 function handleSaveFile(req, res) {
   const form = new multiparty.Form();
@@ -53,14 +16,15 @@ function handleSaveFile(req, res) {
       console.log(`[form.parse error]: `, err);
       return;
     }
-    console.log(files, fields, "fields");
+    // console.log(files, fields, "fields");
     const [file] = files.file;
+    const [hash] = fields.hash;
 
-    if (!fse.existsSync(ASSERT_DIR)) {
-      await fse.mkdirs(ASSERT_DIR);
+    if (!fse.existsSync(ASSERTS_DIR)) {
+      await fse.mkdirs(ASSERTS_DIR);
     }
-    // multiparty是将文件存到临时文件夹，需要将文件以我们的文件名移动到目标文件夹
-    const filePath = `${ASSERT_DIR}/${file.originalFilename}`;
+    // multiparty是将文件存到临时文件夹，需要将文件以我们的文件名命名再移动到目标文件夹
+    const filePath = `${ASSERTS_DIR}/${hash}`;
     if (!fse.existsSync(filePath)) {
       await fse.move(file.path, filePath);
     } else {
@@ -78,6 +42,53 @@ function handleSaveFile(req, res) {
   });
 }
 
+async function getFileSlice(filename) {
+  const allFiles = await fse.readdir(ASSERTS_DIR);
+  return allFiles
+    .filter((i) => i.match(new RegExp(`${filename}-\\d`)))
+    .sort((a, b) => {
+      const idxA = a.match(/\-(\d+)$/)[1];
+      const idxB = b.match(/\-(\d+)$/)[1];
+      return idxA - idxB;
+    });
+}
+
+async function mergeFileChunk(files, filename, size = SLICE_SIZE) {
+  const mergePromises = files.map((chunkName, index) => {
+    return new Promise((resolve) => {
+      const readStream = fse.createReadStream(
+        path.resolve(ASSERTS_DIR, chunkName)
+      );
+      const writeStream = fse.createWriteStream(
+        path.resolve(ASSERTS_DIR, filename),
+        {
+          start: index * size,
+          end: (index + 1) * size,
+        }
+      );
+      readStream.pipe(writeStream);
+      readStream.on('end', () => {
+        resolve();
+      })
+    })
+  })
+  return await Promise.all(mergePromises);
+}
+
+function handleMergeFile(req, res) {
+  let chunkData = '';
+  req.on('data', function (chunk) {
+    chunkData += chunk;
+  })
+  req.on('end', async function() {
+    const parsed = JSON.parse(chunkData || '{}');
+    const matchFiles = await getFileSlice(parsed.filename);
+    mergeFileChunk(matchFiles, parsed.filename);
+
+    res.end(util.inspect(matchFiles));
+  })
+}
+
 async function handleRequest(req, res) {
   const { url } = req;
 
@@ -85,10 +96,14 @@ async function handleRequest(req, res) {
     handleSaveFile(req, res);
   }
 
+  if (url === '/merge') {
+    handleMergeFile(req, res);
+  }
+
 }
 
 server.on('request', async (req, res) => {
-  console.log(`[request event]: req.url request incoming`)
+  console.log(`[request event]: ${req.url} request incoming`)
 })
 
 server.listen(3001, () => {

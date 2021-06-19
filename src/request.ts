@@ -26,7 +26,7 @@ function addEventListeners(xhr: XMLHttpRequest, listeners: Listeners[], resolve)
   for (let event of listeners) {
     function withResolveHandler(resolve) {
       return (evt) => {
-        event.handler(evt, resolve)
+        return event.handler(evt, resolve)
       }
     }
     xhr.addEventListener(event.name, withResolveHandler(resolve), event.options)

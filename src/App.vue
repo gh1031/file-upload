@@ -13,15 +13,23 @@
         />
       </label>
     </div>
-    <el-progress :percentage="percentage" />
+    <ul class="progress-container">
+      <li
+        v-for="p in progressList"
+        class="progress-item"
+      >
+        <span>{{ p.name }}</span>
+        <el-progress :percentage="p.percentage" />
+      </li>
+    </ul>
 
     <el-button type="primary" @click="handleUpload">上传</el-button>
   </div>
 </template>
 
 <script>
-const SIZE = 10 * 1024 * 1024;
 import { ElLoading } from 'element-plus';
+const SLICE_SIZE = 50 * 1024 * 1024
 
 export default {
   data() {
@@ -29,7 +37,7 @@ export default {
       isSplit: false,
       file: null,
       percentage: 0,
-      fileSlices: [],
+      progressList: [],
     }
   },
   methods: {
@@ -37,15 +45,6 @@ export default {
       const [file] = evt.target.files;
       this.file = file;
       this.percentage = 0;
-    },
-    createFileSlice(file, size = SIZE) {
-      const fileSlices = []
-      let cursor = 0;
-      while (cursor < file.size) {
-        fileSlices.push(file.slice(cursor, cursor + size));
-        cursor += size;
-      }
-      return fileSlices;
     },
     showLoading() {
       this.loadingInst = ElLoading.service({ fullscreen: true, text: '准备中...' });
@@ -61,44 +60,79 @@ export default {
         setTimeout(r, time)
       })
     },
-    handelProgress(e) {
-      console.log(e)
+    createFileSlice(file, size = SLICE_SIZE) {
+      const fileSlices = []
+      let cursor = 0;
+      while (cursor < file.size) {
+        fileSlices.push(file.slice(cursor, cursor + size));
+        cursor += size;
+      }
+      return fileSlices;
     },
     async uploadFile() {
-      const formData = new FormData();
-      
       if (this.isSplit) {
-        file = this.createFileSlice(this.file).map((chunk, index) => {
-
-        })
-        const uploadList = fileSlices.map(formdata => this.request({
+        const uploadList = this.createFileSlice(this.file)
+          .map((chunk, index) => {
+            const formData = new FormData();
+            const chunkHash = `${this.file.name}-${index}`;
+            formData.append('file', chunk);
+            formData.append('hash', chunkHash);
+            this.progressList.push({
+              name: chunkHash,
+              percentage: 0,
+            })
+            return formData;
+          })
+          .map(formdata => this.request({
             url: '/upload',
             method: 'post',
             data: formdata,
-        }))
+            listeners: [{
+              name: 'progress',
+              handler: this.handleSetProgress(formdata.get('hash'))
+            }, {
+              name: 'load',
+              handler: function (evt, resolve) {
+                resolve(evt)
+              }
+            }]
+          }))
         return await Promise.all(uploadList);
       }
 
+      const formData = new FormData();
       formData.append('file', this.file);
-      formData.append('filename', this.file.name)
+      formData.append('hash', this.file.name);
 
-      await this.wait(1000 * 3)
+      this.progressList.push({
+        name: this.file.name,
+        percentage: 0
+      })
+
+      await this.wait(1000 * 1)
       this.hideLoading();
-
+    
       const res = await this.request({
         url: '/upload',
         method: 'post',
         data: formData,
         listeners: [{
           name: 'progress',
-          handler: this.handleUploadProgress
+          handler: this.handleSetProgress(this.file.name)
         }]
       })
       return res;
     },
-    handleUploadProgress(evt) {
-      const { loaded, total } = evt;
-      this.percentage = Math.ceil(loaded / total * 100);
+    handleSetProgress(filename) {
+      return (evt) => {
+        const { loaded, total } = evt;
+        const idx = this.progressList.findIndex(i => i.name === filename);
+        this.progressList[idx] = {
+          name: filename,
+          percentage: Math.ceil(loaded / total * 100),
+        }
+
+      }
     },
     async handleMerge() {
       this.request({
@@ -114,15 +148,17 @@ export default {
     },
     async handleUpload() {
       if (!this.file) return;
+      this.progressList = [];
       const res = await this.uploadFile();
-      this.handleMerge();
-      console.log(res, 'response');
+      if (this.isSplit) {
+        this.handleMerge();
+      }
     },
   }
 }
 </script>
 
-<style scoped>
+<style lang="postcss">
 .upload-container {
   display: flex;
   flex-direction: column;
@@ -131,5 +167,26 @@ export default {
   height: 200px;
   box-shadow: 0 0 10px #1fa;
   margin-bottom: 30px;
+}
+
+.progress-container {
+  width: 80%;
+  margin: auto;
+  list-style: none;
+
+}
+.progress-item {
+  display: flex;
+}
+.progress-item span {
+  width: 12%;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  overflow: hidden;
+  margin-right: 20px;
+}
+
+.progress-item .el-progress {
+  flex: 1;
 }
 </style>

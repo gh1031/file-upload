@@ -1055,6 +1055,13 @@ postcss-modules@^4.0.0:
     postcss-modules-values "^4.0.0"
     string-hash "^1.1.1"
 
+postcss-nested@^5.0.5:
+  version "5.0.5"
+  resolved "https://registry.npm.taobao.org/postcss-nested/download/postcss-nested-5.0.5.tgz?cache=0&sync_timestamp=1614914936414&other_urls=https%3A%2F%2Fregistry.npm.taobao.org%2Fpostcss-nested%2Fdownload%2Fpostcss-nested-5.0.5.tgz#f0a107d33a9fab11d7637205f5321e27223e3603"
+  integrity sha1-8KEH0zqfqxHXY3IF9TIeJyI+NgM=
+  dependencies:
+    postcss-selector-parser "^6.0.4"
+
 postcss-selector-parser@^6.0.2, postcss-selector-parser@^6.0.4:
   version "6.0.6"
   resolved "https://registry.nlark.com/postcss-selector-parser/download/postcss-selector-parser-6.0.6.tgz?cache=0&sync_timestamp=1620752924836&other_urls=https%3A%2F%2Fregistry.nlark.com%2Fpostcss-selector-parser%2Fdownload%2Fpostcss-selector-parser-6.0.6.tgz#2c5bba8174ac2f6981ab631a42ab0ee54af332ea"
