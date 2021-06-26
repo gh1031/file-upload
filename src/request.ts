@@ -2,7 +2,8 @@ import { UPLOAD_PROXY } from "./constants";
 
 export default request;
 
-interface RequestOption<T> {
+type ResponseType = '' | 'arraybuffer' | 'text' | 'blob' | 'json' | 'document'
+interface RequestOption {
   url: string;
   data: any;
   headers: {
@@ -10,45 +11,13 @@ interface RequestOption<T> {
   };
   proxy: string;
   method: 'post' | 'get';
-  listeners?: Listeners[];
+  responseType: ResponseType;
+  onDownloadProgress(evt: ProgressEvent): any;
+  onUploadProgress(evt: ProgressEvent): any;
 }
 
-type EventName = keyof XMLHttpRequestEventTargetEventMap;
-interface Listeners {
-  name: EventName;
-  handler(e: ProgressEvent<XMLHttpRequestEventTarget>, ...rest): void;
-  options?: {
-    [key: string]: any;
-  }
-}
 
-function addEventListeners(xhr: XMLHttpRequest, listeners: Listeners[], resolve) {
-  for (let event of listeners) {
-    function withResolveHandler(resolve) {
-      return (evt) => {
-        return event.handler(evt, resolve)
-      }
-    }
-    xhr.addEventListener(event.name, withResolveHandler(resolve), event.options)
-  }
-}
-
-const defaultListeners: Listeners[] = [
-  {
-    name: 'load',
-    handler(e: ProgressEvent) {
-
-    }
-  },
-  {
-    name: 'progress',
-    handler(e: ProgressEvent) {
-
-    }
-  }
-]
-
-function request<T>(option: RequestOption<T>) {
+function request(option: RequestOption) {
   return new Promise(resolve => {
     const {
       url,
@@ -56,7 +25,8 @@ function request<T>(option: RequestOption<T>) {
       method,
       proxy = UPLOAD_PROXY,
       headers = {},
-      listeners = [],
+      onDownloadProgress,
+      onUploadProgress,
     } = option;
     const xhr = new XMLHttpRequest();
     
@@ -65,9 +35,23 @@ function request<T>(option: RequestOption<T>) {
     Object.entries(headers).forEach(([key, value]) => {
       xhr.setRequestHeader(key, value);
     })
-    
-    addEventListeners(xhr, listeners.length ? listeners : defaultListeners, resolve);
 
-    xhr.send(data);
+    xhr.onloadend = function () {
+      if (this.status >= 200 && this.status < 300) {
+        const response = ['', 'text', 'json'].includes(xhr.responseType) ? xhr.responseText : xhr.response;
+        return resolve(response);
+      };
+    }
+
+    xhr.onprogress = function (evt: ProgressEvent) {
+      onDownloadProgress && onDownloadProgress(evt)
+    }
+
+    xhr.upload.onprogress = function (evt: ProgressEvent) {
+      onUploadProgress && onUploadProgress(evt);
+    }
+    
+
+    xhr.send(data || null);
   })
 }

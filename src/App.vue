@@ -28,7 +28,7 @@
 </template>
 
 <script>
-import { ElLoading } from 'element-plus';
+import { ElLoading, ElMessage } from 'element-plus';
 const SLICE_SIZE = 50 * 1024 * 1024
 
 export default {
@@ -72,31 +72,27 @@ export default {
     async uploadFile() {
       if (this.isSplit) {
         const uploadList = this.createFileSlice(this.file)
-          .map((chunk, index) => {
-            const formData = new FormData();
-            const chunkHash = `${this.file.name}-${index}`;
-            formData.append('file', chunk);
-            formData.append('hash', chunkHash);
-            this.progressList.push({
-              name: chunkHash,
-              percentage: 0,
+          .map(
+            (chunk, index) => {
+              const formData = new FormData();
+              const chunkHash = `${this.file.name}-${index}`;
+              formData.append('file', chunk);
+              formData.append('hash', chunkHash);
+              this.progressList.push({
+                name: chunkHash,
+                percentage: 0,
+              })
+              return formData;
+            }
+          )
+          .map(
+            formdata => this.request({
+              url: '/upload',
+              method: 'post',
+              data: formdata,
+              onUploadProgress: this.handleUploadProgress(formdata.get('hash')),
             })
-            return formData;
-          })
-          .map(formdata => this.request({
-            url: '/upload',
-            method: 'post',
-            data: formdata,
-            listeners: [{
-              name: 'progress',
-              handler: this.handleSetProgress(formdata.get('hash'))
-            }, {
-              name: 'load',
-              handler: function (evt, resolve) {
-                resolve(evt)
-              }
-            }]
-          }))
+          )
         return await Promise.all(uploadList);
       }
 
@@ -108,22 +104,17 @@ export default {
         name: this.file.name,
         percentage: 0
       })
-
-      await this.wait(1000 * 1)
       this.hideLoading();
     
       const res = await this.request({
         url: '/upload',
         method: 'post',
         data: formData,
-        listeners: [{
-          name: 'progress',
-          handler: this.handleSetProgress(this.file.name)
-        }]
+        onUploadProgress: this.handleUploadProgress(this.file.name)
       })
       return res;
     },
-    handleSetProgress(filename) {
+    handleUploadProgress(filename) {
       return (evt) => {
         const { loaded, total } = evt;
         const idx = this.progressList.findIndex(i => i.name === filename);
@@ -135,7 +126,7 @@ export default {
       }
     },
     async handleMerge() {
-      this.request({
+      await this.request({
         url: '/merge',
         method: 'post',
         headers: {
@@ -145,13 +136,18 @@ export default {
           filename: this.file.name
         })
       })
+      ElMessage.success('上传成功!')
     },
     async handleUpload() {
       if (!this.file) return;
       this.progressList = [];
-      const res = await this.uploadFile();
-      if (this.isSplit) {
-        this.handleMerge();
+      try {
+        await this.uploadFile();
+        if (this.isSplit) {
+          this.handleMerge();
+        }
+      } catch (e) {
+        console.error(e)
       }
     },
   }
